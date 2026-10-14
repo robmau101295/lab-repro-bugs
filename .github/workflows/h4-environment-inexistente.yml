@@ -16,7 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: lab-pdn
     steps:
-      - run: echo "Este job corrió sin aprobación. Revisa Settings > Environments: apareció 'lab-pdn'."
+      - run: |
+          echo "Este job corrió sin aprobación. Revisa Settings > Environments: apareció 'lab-pdn'."
 
   aprobacion_environment_protegido:
     name: "environment: lab-prod-approval (existe con reviewer -> espera)"
