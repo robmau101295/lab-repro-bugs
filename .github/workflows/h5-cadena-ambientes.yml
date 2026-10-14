@@ -1,0 +1,87 @@
+name: H5 - cadena dev -> qa cuando dev no tiene cambios
+
+# Simula la cadena con jobs que solo hacen echo (sin Terraform ni environments).
+# Escenario: dev NO tiene cambios, qa SÍ.
+#   Azure:          approval_qa corre, porque acepta apply_dev = Succeeded o Skipped.
+#   Patrón actual:  approval_qa tiene "needs: [apply_dev, plan_qa]" y un if SIN funciones de estado,
+#                   así que GitHub le agrega success(): como apply_dev quedó skipped, qa se salta.
+#   Corregido:      !cancelled() + revisar que nada haya fallado.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dev_tiene_cambios:
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      qa_tiene_cambios:
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+
+jobs:
+  plan_dev:
+    runs-on: ubuntu-latest
+    outputs:
+      exist-changes: ${{ steps.plan.outputs.exist-changes }}
+    steps:
+      - id: plan
+        run: echo "exist-changes=${{ inputs.dev_tiene_cambios }}" >> "$GITHUB_OUTPUT"
+
+  plan_qa:
+    runs-on: ubuntu-latest
+    outputs:
+      exist-changes: ${{ steps.plan.outputs.exist-changes }}
+    steps:
+      - id: plan
+        run: echo "exist-changes=${{ inputs.qa_tiene_cambios }}" >> "$GITHUB_OUTPUT"
+
+  approval_dev:
+    needs: [plan_dev]
+    if: needs.plan_dev.outputs.exist-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Aprobación dev"
+
+  apply_dev:
+    needs: [approval_dev]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Apply dev"
+
+  # ---------------- Patrón actual ----------------
+  actual_approval_qa:
+    name: "ACTUAL approval qa"
+    needs: [apply_dev, plan_qa]
+    if: needs.plan_qa.outputs.exist-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Aprobación qa (patrón actual)"
+
+  actual_apply_qa:
+    name: "ACTUAL apply qa"
+    needs: [actual_approval_qa]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Apply qa (patrón actual)"
+
+  # ---------------- Corregido ----------------
+  corregido_approval_qa:
+    name: "CORREGIDO approval qa"
+    needs: [plan_dev, approval_dev, apply_dev, plan_qa]
+    if: >-
+      !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && needs.plan_qa.result == 'success'
+      && needs.plan_qa.outputs.exist-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Aprobación qa (corregido)"
+
+  corregido_apply_qa:
+    name: "CORREGIDO apply qa"
+    needs: [corregido_approval_qa]
+    if: "!cancelled() && needs.corregido_approval_qa.result == 'success'"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Apply qa (corregido)"

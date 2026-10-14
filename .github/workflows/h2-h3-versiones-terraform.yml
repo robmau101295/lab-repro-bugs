@@ -1,0 +1,108 @@
+name: H2/H3 - versiones de Terraform
+
+# H2: el plan se genera con una versión (imagen 1.12.0) y el apply instala otra
+#     (setup-terraform 1.5.0). Un plan file solo lo puede aplicar la MISMA versión.
+# H3: los consumidores en la v3.0.0 de Azure usan Terraform 1.6.5. Si GitHub aplica con 1.12.0,
+#     ¿puede Azure (1.6.5) volver a leer ese state? Eso decide si hay rollback.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_nueva:
+        type: string
+        default: 1.12.0
+      version_vieja:
+        type: string
+        default: 1.6.5
+
+jobs:
+  # ------------------------------ H2 ------------------------------
+  h2_plan:
+    name: "H2 plan con ${{ inputs.version_nueva }}"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.version_nueva }}
+          terraform_wrapper: false
+      - run: terraform init -input=false
+      - run: terraform plan -input=false -out plan.tfplan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: h2-plan
+          path: fixture/plan.tfplan
+
+  h2_apply:
+    name: "H2 apply con 1.5.0 (debe FALLAR)"
+    needs: [h2_plan]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: h2-plan
+          path: fixture
+      - run: terraform init -input=false
+      - run: terraform apply -input=false -auto-approve plan.tfplan
+
+  # ------------------------------ H3 ------------------------------
+  h3_apply_nueva:
+    name: "H3 apply con ${{ inputs.version_nueva }} (GitHub)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.version_nueva }}
+          terraform_wrapper: false
+      - run: terraform init -input=false
+      - run: terraform apply -input=false -auto-approve
+      - name: Versión registrada en el state
+        run: grep -m1 '"terraform_version"' terraform.tfstate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: h3-state
+          path: fixture/terraform.tfstate
+
+  h3_plan_vieja:
+    name: "H3 plan con ${{ inputs.version_vieja }} sobre ese state (Azure)"
+    needs: [h3_apply_nueva]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.version_vieja }}
+          terraform_wrapper: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: h3-state
+          path: fixture
+      - run: terraform init -input=false
+      - name: Plan (anota en el manual si funciona o qué error da)
+        run: terraform plan -input=false -detailed-exitcode

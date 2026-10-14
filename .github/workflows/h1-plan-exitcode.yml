@@ -1,0 +1,68 @@
+name: H1 - plan -detailed-exitcode con bash -e
+
+# Patrón actual (terraform_plan_steps/action.yml):
+#   terraform plan ... -detailed-exitcode
+#   exit_code=$?
+# GitHub ejecuta "shell: bash" como "bash -e {0}": si el plan devuelve 2 (= HAY cambios),
+# el step muere en esa línea y nunca llega a leer exit_code.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patron_actual:
+    name: Patrón actual (debe FALLAR)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.0
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+
+      - name: Plan
+        run: |
+          terraform plan -input=false -out plan.tfplan -detailed-exitcode
+          exit_code=$?
+          echo "Esta línea no se imprime cuando hay cambios. exit_code=${exit_code}"
+
+  corregido:
+    name: Corregido con set +e (debe PASAR)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: fixture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.0
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+
+      - name: Plan
+        run: |
+          set +e
+          terraform plan -input=false -out plan.tfplan -detailed-exitcode
+          exit_code=$?
+          set -e
+          echo "exit_code=${exit_code}"
+          case "${exit_code}" in
+            0) echo "Sin cambios" ;;
+            2) echo "Hay cambios" ;;
+            *) exit 1 ;;
+          esac

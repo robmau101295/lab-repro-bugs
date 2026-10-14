@@ -1,0 +1,26 @@
+name: H4 - environment que no existe = sin aprobación
+
+# Patrón actual: la aprobación de producción usa "environment: pdn" (y shared usa "shared").
+# En Deuna, deuna-iac-do-github-administration crea dev, dev-approval, qa, qa-approval, prod y
+# prod-approval (los reviewers están en los *-approval). Si un job pide un environment que NO
+# existe, GitHub lo crea solo, SIN reglas de protección, y el job corre sin que nadie apruebe.
+#
+# Antes de correrlo: crea el environment "lab-prod-approval" con tu usuario como required reviewer.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  aprobacion_environment_inexistente:
+    name: "environment: lab-pdn (no existe -> corre sin pedir aprobación)"
+    runs-on: ubuntu-latest
+    environment: lab-pdn
+    steps:
+      - run: echo "Este job corrió sin aprobación. Revisa Settings > Environments: apareció 'lab-pdn'."
+
+  aprobacion_environment_protegido:
+    name: "environment: lab-prod-approval (existe con reviewer -> espera)"
+    runs-on: ubuntu-latest
+    environment: lab-prod-approval
+    steps:
+      - run: echo "Este job esperó a que alguien aprobara."

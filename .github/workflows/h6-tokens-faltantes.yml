@@ -1,0 +1,80 @@
+name: H6 - tokens sin valor en los tfvars
+
+# Patrón actual: replacetokens solo recibe ENVIRONMENT, ARGO_CD_REGION y PLATFORM_TO_USE, con
+# missing-var-action: keep. Los valores que en Azure venían de los variable groups (REDIS_AUTH,
+# KAFKA_SASL_PASSWORD, ...) no llegan y el token queda LITERAL en el tfvars.
+# Antes de correrlo crea el secreto de repo REDIS_AUTH: verás que igual no se usa.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patron_actual:
+    name: Patrón actual (el token queda literal)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture-tokens
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.0
+          terraform_wrapper: false
+
+      - name: Inject tokens (como hoy)
+        uses: qetza/replacetokens-action@v1.2.1
+        with:
+          sources: fixture-tokens/config/**/*.tfvars
+          token-prefix: "#{"
+          token-suffix: "}#"
+          missing-var-action: keep
+          variables: >-
+            {
+              "ENVIRONMENT": "dev",
+              "ARGO_CD_REGION": "NA",
+              "PLATFORM_TO_USE": "AWS"
+            }
+
+      - name: Ver el tfvars resultante
+        run: cat config/app.tfvars
+
+      - run: terraform init -input=false
+
+      - name: Plan (mira el valor de redis_auth)
+        run: terraform plan -input=false -var-file=config/app.tfvars
+
+  corregido:
+    name: Corregido (valores desde secrets/vars)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fixture-tokens
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Inject tokens con toJSON(vars) + toJSON(secrets)
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          values = {}
+          for key in ("VARS_JSON", "SECRETS_JSON"):
+              values.update({k.upper(): v for k, v in json.loads(os.environ[key] or "{}").items()})
+          values["ENVIRONMENT"] = "dev"
+          path = "config/app.tfvars"
+          text = open(path).read()
+          missing = sorted(set(re.findall(r"#\{([A-Za-z0-9_]+)\}#", text)) - set(values))
+          text = re.sub(r"#\{([A-Za-z0-9_]+)\}#", lambda m: values.get(m.group(1).upper(), ""), text)
+          open(path, "w").write(text)
+          print("Tokens sin valor:", missing or "ninguno")
+          PY
+          echo "--- tfvars (los secretos salen como *** en el log)"
+          cat config/app.tfvars
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+          VARS_JSON: ${{ toJSON(vars) }}

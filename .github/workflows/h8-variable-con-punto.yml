@@ -1,0 +1,27 @@
+name: H8 - nombres de variables con punto
+
+# Patrón actual: vars['AZURE_PIPELINES_CONTAINER_TERRAFORM_PLAN_1.12.0_IMAGE_NAME']
+# En GitHub los nombres de variables solo admiten letras, números y "_". Esa variable no se puede
+# crear, así que la expresión siempre devuelve vacío y la imagen del contenedor queda vacía.
+#
+# Antes de correrlo:
+#   gh variable set "TERRAFORM_PLAN_1.12.0_IMAGE_NAME" --body "imagen:1.12.0"   # -> falla
+#   gh variable set "TERRAFORM_PLAN_1_12_0_IMAGE_NAME" --body "imagen:1.12.0"   # -> funciona
+
+on:
+  workflow_dispatch:
+
+jobs:
+  leer_variables:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comparar
+        run: |
+          echo "Con punto    : '${CON_PUNTO}'"
+          echo "Sin punto    : '${SIN_PUNTO}'"
+          if [[ -z "${CON_PUNTO}" ]]; then
+            echo "::warning::La variable con punto llega vacía: el contenedor se quedaría sin imagen."
+          fi
+        env:
+          CON_PUNTO: ${{ vars['TERRAFORM_PLAN_1.12.0_IMAGE_NAME'] }}
+          SIN_PUNTO: ${{ vars.TERRAFORM_PLAN_1_12_0_IMAGE_NAME }}
